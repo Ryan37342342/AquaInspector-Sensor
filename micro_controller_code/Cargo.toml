@@ -8,24 +8,24 @@ rust-version = "1.77"
 
 [[bin]]
 name = "micro_controller_code"
-harness = false # do not use the built in cargo test harness -> resolve rust-analyzer errors
+harness = false # Disable test harness to resolve rust-analyzer errors
 
 [profile.release]
-opt-level = "s"
+opt-level = "s" # Optimize for size
 
 [profile.dev]
-debug = true    # Symbols are nice and they don't increase the size on Flash
-opt-level = "z"
+debug = true    # Enable debug symbols in development builds
+opt-level = "z" # Optimize for size in dev builds
 
 [features]
 default = []
-
 experimental = ["esp-idf-svc/experimental"]
 
 [dependencies]
 log = "0.4"
 esp-idf-svc = { version = "0.49", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+heapless = "0.7"
 
 [build-dependencies]
 embuild = "0.32.0"
-cc = "=1.1.30" # Necessary until a new version of `esp-idf-sys` is released
+cc = "=1.1.30" 
