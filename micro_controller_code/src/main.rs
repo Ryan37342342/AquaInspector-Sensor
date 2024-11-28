@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::Read;
 
 
+
 // struct to hold the wifi connection details 
 #[derive(Deserialize)]
 struct WifiConfig{
@@ -26,11 +27,11 @@ fn read_wifi_config()->WifiConfig{
     return wifi_config;
 }
 fn main() {
-    // Required for ESP32 Rust compatibility.    
+    // ??? 
     esp_idf_svc::sys::link_patches();
     println!("Entered Main function!");
-
-    // Initialize peripherals, event loop, and NVS (Non-Volatile Storage)
+   
+    // Initialize peripherals, event loop, and storage
     let peripherals = Peripherals::take().unwrap();
     let sys_loop = EspSystemEventLoop::take().unwrap();     
     let nvs = EspDefaultNvsPartition::take().unwrap();
@@ -41,12 +42,20 @@ fn main() {
         sys_loop,
         Some(nvs),
     ).unwrap();
+    
+    // get the wifi config
+    let wifi_config = read_wifi_config();
+    // turn password and ssid into an actual string 
+    let mut ssid = heapless::String::<32>::new();
+    ssid.push_str(&wifi_config.ssid).expect("SSID too long");
 
+    let mut password = heapless::String::<64>::new();
+    password.push_str(&wifi_config.password).expect("Password too long");
 
-    // Configure WiFi with your SSID and password
+    // Configure WiFi with SSID and password
     wifi_driver.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid:"".try_into().unwrap(),        // Update with your WiFi SSID
-        password:"".try_into().unwrap(), // Update with your WiFi Password
+        ssid,       
+        password, 
         ..Default::default()
     })).unwrap();
 
