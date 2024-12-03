@@ -21,4 +21,4 @@ Cargo.lock
 #.idea/
 
 # ignore network_settings 
-micro_controller_code/src/wifi_config.json
+wifi_config.json
