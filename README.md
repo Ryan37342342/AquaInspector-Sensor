@@ -6,5 +6,5 @@ This is code for the microcontroller and sensor setup, once complete this will s
  - Bash script will take and parse this into the rust binary file using the build-script option so it can be accessed 
 
 ## ToDo :
- - connect board to temp sensor and get a reading every 5 mins 
+ - troubleshoot and solve issues with temp reading boiler plate 
  - setup http api to return  
