@@ -2,9 +2,12 @@ use std::{thread::sleep, time::Duration};
 use esp_idf_svc::hal::delay::Ets;
 use esp_idf_svc::hal::gpio::PinDriver;
 use esp_idf_svc::hal::peripherals::Peripherals;
+use esp_idf_svc::sys::EspError;
 use esp_idf_svc::wifi::{EspWifi,Configuration,ClientConfiguration};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
-use ds18b20::{Ds18b20};
+use one_wire_bus_2::{OneWire, OneWireError};
+use ds18b20_2::Ds18b20;
+
 
 include!(concat!(env!("OUT_DIR"), "/wifi_config.rs"));
 
@@ -57,15 +60,14 @@ fn main() {
 
     // now we start to connect to the senors 
     // setup pin that the temperature sensor will send data down
-    let mut temp_pin      = PinDriver::input_output(peripherals.pins.gpio0).unwrap();
+    let temp_pin      = PinDriver::input_output(peripherals.pins.gpio15).unwrap();
 
     // create 1-wire bus connection to talk to the sensor with a delay
     let mut delay = Ets;
-    let mut onewire:OneWire = ds18b20::OneWire::new(temp_pin.into_input_output()).unwrap();
+    let mut onewire = OneWire::new(temp_pin).unwrap();
 
-    //look for temp devices on the bus 
-    let devices = onewire.devices(false, &mut delay).unwrap();
-
+    // collect devices from an iterator into a vector 
+    let devices: Vec<_> = onewire.devices(false,&mut delay).collect();
     // check that devices where actually found 
     if devices.is_empty(){
         println!("No Devices found......");
@@ -73,24 +75,24 @@ fn main() {
     }
 
     // at this stage only one device should be connected so just use the first 
-    let sensor_address = devices[0];
-    println!("Found Temperature Sensor at: {}",sensor_address);
-
+    let sensor_address = devices[0].unwrap();
+    println!("Found Temperature Sensor at: {:?}",sensor_address);
     // create an instance of the sensor 
-    let mut temp_sensor = Ds18b20::new(sensor_address).unwrap();
+    let temp_sensor = Ds18b20::new::<OneWireError<EspError>>(sensor_address).unwrap();
 
     // Main loop to print IP address info every 10 seconds
     loop {
         if let Ok(ip_info) = wifi_driver.sta_netif().get_ip_info() {
             println!("IP info: {:?}", ip_info);
             // get the temp from the sensoe 
-            let temp_reading = sensor_address.read_temperature(&mut onewire, &mut delay).unwrap();
+            let temp_reading = temp_sensor.read_data(&mut onewire, &mut delay).unwrap();
             // Print the temperature.
-            println!("Temperature: {:.2} °C", temp_reading);
+            println!("Temperature: {:.2} °C", temp_reading.temperature);
 
         } else {
             println!("Failed to get IP info");
         }
         sleep(Duration::new(10, 0));
     }
+   
 }
