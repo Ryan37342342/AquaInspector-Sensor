@@ -5,8 +5,8 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::EspError;
 use esp_idf_svc::wifi::{EspWifi,Configuration,ClientConfiguration};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
-use one_wire_bus_2::{OneWire, OneWireError};
-use ds18b20_2::Ds18b20;
+use one_wire_bus::{OneWire, OneWireError, OneWireResult};
+use ds18b20::Ds18b20;
 
 
 include!(concat!(env!("OUT_DIR"), "/wifi_config.rs"));
@@ -80,19 +80,31 @@ fn main() {
     // create an instance of the sensor 
     let temp_sensor = Ds18b20::new::<OneWireError<EspError>>(sensor_address).unwrap();
 
-    // Main loop to print IP address info every 10 seconds
+    // Main loop 
     loop {
         if let Ok(ip_info) = wifi_driver.sta_netif().get_ip_info() {
-            println!("IP info: {:?}", ip_info);
-            // get the temp from the sensoe 
-            let temp_reading = temp_sensor.read_data(&mut onewire, &mut delay).unwrap();
-            // Print the temperature.
-            println!("Temperature: {:.2} °C", temp_reading.temperature);
+           
+            let _ = temp_sensor.start_temp_measurement(&mut onewire, &mut delay);
+            // Delay to give the sensor time to measure the temperature
+            sleep(Duration::from_secs(1));
 
-        } else {
-            println!("Failed to get IP info");
+            // get the temp from the sensor with error handling
+            match temp_sensor.read_data(&mut onewire, &mut delay) {
+                //if a temperature was read successfully
+                Ok(temp_data) => {
+                    println!("Temperature: {:.2} °C",&temp_data.temperature)
+                }
+                // handle error case
+                Err(e) => {
+                    eprintln!("Error reading temperature: {:?}", e);
+                }                
+            }
         }
+        else{
+            println!("Failed to get IP...");
+        }
+        // wait ten seconds 
         sleep(Duration::new(10, 0));
-    }
-   
+    
+    }  
 }
