@@ -4,6 +4,8 @@
 SSID=$(jq .ssid wifi_config.json)
 PASSWORD=$(jq .password wifi_config.json)
 
+set -e
+
 echo "Compiling build ..."
 cd micro_controller_code 
 SSID="$SSID" PASSWORD="$PASSWORD" cargo build --target xtensa-esp32-espidf --release
