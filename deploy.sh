@@ -3,12 +3,14 @@
 ## ADD READING FROM BASH HERE ##
 SSID=$(jq .ssid wifi_config.json)
 PASSWORD=$(jq .password wifi_config.json)
+TEMP_API_URL=$(jq .temp_api_url wifi_config.json)
 
 set -e
 
 echo "Compiling build ..."
 cd micro_controller_code 
-SSID="$SSID" PASSWORD="$PASSWORD" cargo build --target xtensa-esp32-espidf --release
+cargo clean
+SSID="$SSID" PASSWORD="$PASSWORD" TEMP_API_URL="$TEMP_API_URL" cargo build --target xtensa-esp32-espidf --release
 echo "reseting device ..."
 espflash erase-flash
 echo "pushing new code ..."
