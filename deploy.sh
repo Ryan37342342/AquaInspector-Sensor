@@ -9,7 +9,10 @@ set -e
 
 echo "Compiling build ..."
 cd micro_controller_code 
-cargo clean
+# uncomment to clean up packages if broken install 
+#cargo clean
+cargo update 
+export RUST_BACKTRACE=1
 SSID="$SSID" PASSWORD="$PASSWORD" TEMP_API_URL="$TEMP_API_URL" cargo build --target xtensa-esp32-espidf --release
 echo "reseting device ..."
 espflash erase-flash
