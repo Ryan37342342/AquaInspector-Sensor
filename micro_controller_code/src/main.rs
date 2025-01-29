@@ -117,8 +117,18 @@ fn main() {
            // Take average reading 
            let average_reading:f32 = (&temp_array[0] + &temp_array[1] + &temp_array[2])/3.0;
            // send readings to api 
-           let response =http_client.post(TEMP_API_URL).body(average_reading.to_string()).send().unwrap();
-           println!("{}",response.text().unwrap())
+           let response =http_client.post(TEMP_API_URL).body(average_reading.to_string()).send();
+           match response{
+            // Successful case
+            Ok(res) => {
+                println!("response: {}", res.text().unwrap_or("No Text found".to_string()));
+            }
+            Err(ex) => {
+                eprintln!("Error sending data:{:?}",ex)
+
+            }
+           }
+         
 
         }
         else{
