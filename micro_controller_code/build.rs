@@ -10,6 +10,7 @@ fn main() {
     let ssid = env::var("SSID").expect("Environment variable `SSID` not provided");
     let password = env::var("PASSWORD").expect("Environment variable `PASSWORD` not provided");
     let temp_api_url = env::var("TEMP_API_URL").expect("Environment variable `TEMP_API_URL` not provided");
+    let tank_number = env::var("TANK_NUMBER").expect("Enviroment variable `TANK_NUMBER` not provided");
 
     // Generate a file in the build directory to be included in the binary
     let out_dir = env::var("OUT_DIR").expect("Failed to retrieve OUT_DIR environment variable");
@@ -23,6 +24,7 @@ fn main() {
             pub const WIFI_SSID: &str = {ssid};
             pub const WIFI_PASSWORD: &str = {password};
             pub const TEMP_API_URL: &str = {temp_api_url};
+            pub const TANK_NUMBER: &str ={tank_number};
             "#,
             ssid = ssid,
             password = password,
