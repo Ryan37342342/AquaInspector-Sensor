@@ -1,22 +1,38 @@
 use std::{thread::sleep, time::Duration};
-use esp_idf_svc::hal::delay::Ets;
-use esp_idf_svc::hal::gpio::PinDriver;
-use esp_idf_svc::hal::peripherals::Peripherals;
 
+use esp_idf_svc::hal::{delay::Ets,gpio::PinDriver,peripherals::Peripherals};
 use esp_idf_svc::sys::EspError;
 use esp_idf_svc::wifi::{EspWifi,Configuration,ClientConfiguration};
+
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
+
+use esp_idf_svc::http::client::{Configuration as HttpConfiguration,EspHttpConnection};
+
+use embedded_svc::{
+    http::Method,
+    io::Write,
+};
+
 use one_wire_bus::{OneWire, OneWireError};
 use ds18b20::Ds18b20;
-use reqwest::blocking::Client;
-
+use chrono::{DateTime, Local,Utc};
+use serde::{Serialize};
+use heapless::String;
 
 
 include!(concat!(env!("OUT_DIR"), "/wifi_config.rs"));
 
+#[derive(Serialize)]
+struct TemperaturePayload {
+    tank_number: u32,
+    temp :f32,
+    time_stamp: std::string::String,
+}
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>>  {
     // ??? 
+     // Initialize logging and panic handlers
+    esp_idf_svc::log::EspLogger::initialize_default();
     esp_idf_svc::sys::link_patches();
     println!("Entered Main function!");
    
@@ -63,7 +79,7 @@ fn main() {
 
     // now we start to connect to the senors 
     // setup pin that the temperature sensor will send data down
-    let temp_pin      = PinDriver::input_output(peripherals.pins.gpio15).unwrap();
+    let temp_pin = PinDriver::input_output(peripherals.pins.gpio15).unwrap();
 
     // create 1-wire bus connection to talk to the sensor with a delay
     let mut delay = Ets;
@@ -74,7 +90,7 @@ fn main() {
     // check that devices where actually found 
     if devices.is_empty(){
         println!("No Devices found......");
-        return;
+        return Ok(());
     }
 
     // at this stage only one device should be connected so just use the first 
@@ -83,59 +99,66 @@ fn main() {
     // create an instance of the sensor 
     let temp_sensor = Ds18b20::new::<OneWireError<EspError>>(sensor_address).unwrap();
 
-    //create an http client (NOTE:  Blocking client was imported as we are only sending a few bits of data)
-    let http_client:Client = Client::new(); 
-
-
+  
+    // create headers out of loop
+    let headers = &[("Content-Type", "application/json")];
     //create a array of len 3 to hold temperatures 
     let mut temp_array :[f32;3] = [0.0;3];
 
+    
     // Main loop 
     loop {
-        if let Ok(_ip_info) = wifi_driver.sta_netif().get_ip_info() {
-            // take three temperaute readings 
-            for i in 0..3{
-                let _ = temp_sensor.start_temp_measurement(&mut onewire, &mut delay);
-                // Delay to give the sensor time to measure the temperature
-                sleep(Duration::from_secs(2));
-
-                // get the temp from the sensor with error handling
-                match temp_sensor.read_data(&mut onewire, &mut delay) {
-                    //if a temperature was read successfully
-                    Ok(temp_data) => {
-                        println!("Temperature: {:.2} °C",temp_data.temperature);
-                        // add the temp array  
-                        temp_array[i] = temp_data.temperature;
-                    
-                    }
-                    // handle error case
-                    Err(e) => {
-                        eprintln!("Error reading temperature: {:?}", e);
-                    }                
-                }
-           }
-           // Take average reading 
-           let average_reading:f32 = (&temp_array[0] + &temp_array[1] + &temp_array[2])/3.0;
-           // send readings to api 
-           let response =http_client.post(TEMP_API_URL).body(average_reading.to_string()).send();
-           match response{
-            // Successful case
-            Ok(res) => {
-                println!("response: {}", res.text().unwrap_or("No Text found".to_string()));
-            }
-            Err(ex) => {
-                eprintln!("Error sending data:{:?}",ex)
-
-            }
-           }
-         
-
-        }
-        else{
+    if wifi_driver.sta_netif().get_ip_info().is_err() {
             println!("Failed to get IP...");
+            sleep(Duration::new(10, 0));
+            continue;
         }
-        // wait ten seconds 
-        sleep(Duration::new(10, 0));
+    for i in 0..3 {
+            let _ = temp_sensor.start_temp_measurement(&mut onewire, &mut delay);
+            sleep(Duration::from_secs(2));
     
-    }  
+            match temp_sensor.read_data(&mut onewire, &mut delay) {
+                Ok(temp_data) => {
+                    println!("Temperature: {:.2} °C", temp_data.temperature);
+                    temp_array[i] = temp_data.temperature;
+                }
+                Err(e) => {
+                    eprintln!("Error reading temperature: {:?}", e);
+                    continue;
+                }
+            }
+        }
+    let average_reading = temp_array.iter().sum::<f32>() / temp_array.len() as f32;
+    let time_now = Utc::now();
+    let formatted_timestamp = time_now.to_rfc3339();
+    
+    let connection = EspHttpConnection::new(&HttpConfiguration::default())?;
+     // create http client
+     let mut client = embedded_svc::http::client::Client::wrap(connection);
+
+    let payload = TemperaturePayload {
+            temp: average_reading,
+            time_stamp: formatted_timestamp,
+            tank_number: TANK_NUMBER.parse().unwrap_or(u32::MAX),
+        };
+
+    let payload_json = match serde_json::to_string(&payload) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("Failed to serialize JSON Payload: {:?}", e);
+                sleep(Duration::new(10, 0));
+                continue;
+            }
+        };
+    //println!("Request Body is: {}", payload_json);
+    println!("sending request to {}", TEMP_API_URL);
+    let mut request =  client.request(Method::Post,TEMP_API_URL,headers)?;
+  
+    request.write_all(&payload_json.as_bytes())?;
+    request.flush()?;
+    let response = request.submit()?;
+    println!("Response status: {}", response.status());
+    }
+
+    Ok(())
 }
