@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::{thread::sleep, time::Duration};
 
 use esp_idf_svc::hal::{delay::Ets,gpio::PinDriver,peripherals::Peripherals};
@@ -15,9 +16,9 @@ use embedded_svc::{
 
 use one_wire_bus::{OneWire, OneWireError};
 use ds18b20::Ds18b20;
-use chrono::{DateTime, Local,Utc};
+use chrono::Utc;
 use serde::{Serialize};
-use heapless::String;
+
 
 
 include!(concat!(env!("OUT_DIR"), "/wifi_config.rs"));
@@ -29,8 +30,25 @@ struct TemperaturePayload {
     time_stamp: std::string::String,
 }
 
+#[derive(Serialize)]
+struct LogMessage {
+    tank_number: u32,
+    message_type: std::string::String,
+    message: std::string::String,
+    time_stamp: std::string::String,
+}
+
+
 fn main() -> Result<(), Box<dyn std::error::Error>>  {
-    // ??? 
+    // set up api addresses 
+    const TEMP_API_ENDPOINT: &str = "api/tank/temperature-reading";
+    const LOG_API_ENDPOINT: &str = "api/tank/log";
+    let temp_url = format!("{}{}",BASE_URL,TEMP_API_ENDPOINT);
+    let logging_url = format!("{}{}",BASE_URL,LOG_API_ENDPOINT);
+
+    // read in enviroment varaiable 
+    let tank_number =TANK_NUMBER.parse().unwrap_or(u32::MAX);
+
      // Initialize logging and panic handlers
     esp_idf_svc::log::EspLogger::initialize_default();
     esp_idf_svc::sys::link_patches();
@@ -76,7 +94,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
 
 
     println!("Connected to WiFi!");
-
+    sleep(Duration::from_secs(3));
+    println!("logging url: {}",&logging_url);
+    let logging_result = match log_message(tank_number, "INFO", "CONNECTED TO WIFI!", &logging_url){
+        Ok(()) => {
+            println!("Logging is working!");
+           
+        },
+        Err(e)=> {
+            println!("Error occured when logging message: {}", e)
+        }
+    };
     // now we start to connect to the senors 
     // setup pin that the temperature sensor will send data down
     let temp_pin = PinDriver::input_output(peripherals.pins.gpio15).unwrap();
@@ -85,17 +113,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
     let mut delay = Ets;
     let mut onewire = OneWire::new(temp_pin).unwrap();
 
-    // collect devices from an iterator into a vector 
-    let devices: Vec<_> = onewire.devices(false,&mut delay).collect();
-    // check that devices where actually found 
-    if devices.is_empty(){
-        println!("No Devices found......");
-        return Ok(());
-    }
+    // loop to connect to sensors as sometimes this takes a few goes
+    let sensor_address = loop {
+        // try to find devices and get first address
+        let devices: Vec<_> = onewire.devices(false, &mut delay).collect();
 
-    // at this stage only one device should be connected so just use the first 
-    let sensor_address = devices[0].unwrap();
+        if devices.is_empty() {
+            eprintln!("No devices found, retrying in 5 seconds...");
+            sleep(Duration::from_secs(5));
+            continue;  // retry loop
+        }
+
+        match devices.get(0) {
+            Some(Ok(addr)) => break *addr,  // success! break loop returning addr
+            Some(Err(e)) => {
+                eprintln!("Error getting sensor address: {:?}, retrying in 5 seconds...", e);
+                sleep(Duration::from_secs(5));
+                continue;
+            }
+            None => {
+                eprintln!("No devices found at all, retrying in 5 seconds...");
+                sleep(Duration::from_secs(5));
+                continue;
+            }
+        }
+    };
+   
     println!("Found Temperature Sensor at: {:?}",sensor_address);
+
     // create an instance of the sensor 
     let temp_sensor = Ds18b20::new::<OneWireError<EspError>>(sensor_address).unwrap();
 
@@ -139,7 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
     let payload = TemperaturePayload {
             temp: average_reading,
             time_stamp: formatted_timestamp,
-            tank_number: TANK_NUMBER.parse().unwrap_or(u32::MAX),
+            tank_number: tank_number,
         };
 
     let payload_json = match serde_json::to_string(&payload) {
@@ -151,14 +196,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
             }
         };
     //println!("Request Body is: {}", payload_json);
-    println!("sending request to {}", TEMP_API_URL);
-    let mut request =  client.request(Method::Post,TEMP_API_URL,headers)?;
+    println!("sending request to {}", temp_url);
+    let mut request =  client.request(Method::Post,&temp_url,headers)?;
   
     request.write_all(&payload_json.as_bytes())?;
     request.flush()?;
     let response = request.submit()?;
     println!("Response status: {}", response.status());
     }
+
+    Ok(())
+}
+
+pub fn log_message(tank_number: u32, message_type: &str, message: &str, log_url: &str) -> Result<(), Box<dyn Error>> {
+    let time_now = Utc::now();
+    let formatted_timestamp = time_now.to_rfc3339();
+
+    let log_entry = LogMessage {
+        tank_number,
+        message_type: message_type.to_string(),
+        message: message.to_string(),
+        time_stamp: formatted_timestamp,
+    };
+
+    let json_payload = serde_json::to_string(&log_entry)?; // uses `?` to return error
+    
+    // 🖨️ Debug print for the URL and payload
+    println!("Sending log to URL: {}", log_url);
+    println!("Log JSON Payload: {}", json_payload);
+    
+    // create the connection
+    let connection = EspHttpConnection::new(&HttpConfiguration::default())?;
+    let mut client = embedded_svc::http::client::Client::wrap(connection);
+    let headers = &[("Content-Type", "application/json")];
+
+    let mut request = client.request(Method::Post, log_url, headers)?;
+    request.write_all(&json_payload.as_bytes())?;
+    request.flush()?;
+    let response = request.submit()?;
+    println!("Log sent. Response status: {}", response.status());
 
     Ok(())
 }
