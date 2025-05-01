@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
         }
     for i in 0..3 {
             let _ = temp_sensor.start_temp_measurement(&mut onewire, &mut delay);
-            sleep(Duration::from_secs(2));
+            sleep(Duration::from_secs(20));
     
             match temp_sensor.read_data(&mut onewire, &mut delay) {
                 Ok(temp_data) => {
