@@ -18,4 +18,4 @@ RUST_LOG=debug SSID="$SSID" PASSWORD="$PASSWORD" BASE_URL="$BASE_URL" TANK_NUMBE
 echo "reseting device ..."
 espflash erase-flash
 echo "pushing new code ..."
-espflash flash --port /dev/ttyUSB0 /home/ryan/AquaInspector/AquaInspector-Sensor/micro_controller_code/target/xtensa-esp32-espidf/release/micro_controller_code --monitor
+espflash flash --port /dev/ttyUSB0 /home/ryan/AquaInspector-Sensor/micro_controller_code/target/xtensa-esp32-espidf/release/micro_controller_code --monitor

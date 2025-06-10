@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::net::{IpAddr, Ipv4Addr};
 use std::{thread::sleep, time::Duration};
 
 use esp_idf_svc::hal::{delay::Ets,gpio::PinDriver,peripherals::Peripherals};
@@ -94,9 +95,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
 
 
     println!("Connected to WiFi!");
+
     sleep(Duration::from_secs(3));
     println!("logging url: {}",&logging_url);
-    let logging_result = match log_message(tank_number, "INFO", "CONNECTED TO WIFI!", &logging_url){
+    let _logging_result = match log_message(tank_number, "INFO", "CONNECTED TO WIFI!", &logging_url){
         Ok(()) => {
             println!("Logging is working!");
            
@@ -153,11 +155,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
     
     // Main loop 
     loop {
+        
     if wifi_driver.sta_netif().get_ip_info().is_err() {
             println!("Failed to get IP...");
             sleep(Duration::new(10, 0));
             continue;
         }
+    else {
+        let ip_info = wifi_driver.sta_netif().get_ip_info().unwrap();
+        println!("IP is: {}",ip_info.ip)
+    }
+    
     for i in 0..3 {
             let _ = temp_sensor.start_temp_measurement(&mut onewire, &mut delay);
             sleep(Duration::from_secs(20));
@@ -173,6 +181,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
                 }
             }
         }
+
+    ensure_wifi_connected(&mut wifi_driver)?;
     let average_reading = temp_array.iter().sum::<f32>() / temp_array.len() as f32;
     let time_now = Utc::now();
     let formatted_timestamp = time_now.to_rfc3339();
@@ -195,6 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
                 continue;
             }
         };
+    ensure_wifi_connected(&mut wifi_driver)?;
     //println!("Request Body is: {}", payload_json);
     println!("sending request to {}", temp_url);
     let mut request =  client.request(Method::Post,&temp_url,headers)?;
@@ -237,4 +248,23 @@ pub fn log_message(tank_number: u32, message_type: &str, message: &str, log_url:
     println!("Log sent. Response status: {}", response.status());
 
     Ok(())
+}
+
+fn ensure_wifi_connected(wifi: &mut EspWifi) -> Result<(), Box<dyn std::error::Error>> {
+    let mut retries = 50;
+
+    while retries > 0 {
+        if wifi.is_connected().unwrap_or(false) {
+            let ip_info = wifi.ap_netif().get_ip_info()?;
+            println!("Passed Check: WiFi connected.");
+            return Ok(());
+        } else {
+            println!("WiFi disconnected. Attempting to reconnect...");
+            wifi.connect()?;
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            retries -= 1;
+        }
+    }
+
+    Err("Failed to reconnect to WiFi after retries".into())
 }
